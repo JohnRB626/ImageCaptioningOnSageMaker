@@ -11,11 +11,16 @@ import boto3
 import sagemaker
 import spacy
 
+from typing import Optional
+
+MIN_COUNT = 4
+CAP_LENGTH = 17
+
 class Token():
     # Class used to analyze number of occurences per token in vocab
-    def __init__(self, text:str):
+    def __init__(self, text:str, count:Optional[int] = 1):
         self.text = text
-        self.count = 1
+        self.count = count
         
     def inc(self):
         self.count += 1
@@ -37,42 +42,45 @@ def main():
 
     nlp = spacy.load('en_core_web_md')
 
-    vocab = {}
+    vocab = {0:Token('<NULL>', MIN_COUNT), 1:Token('<START>', MIN_COUNT), 2:Token('<END>', MIN_COUNT), 3:Token('<UNK>', MIN_COUNT)}
+    spacy_2_emb = {} # maps spacy embedding row # to torch embedding row #
     for i in range(num_anns):
         caption = dataset['annotations'][i]['caption']
         doc = nlp(caption)
 
-        ids = [20000] # <START> token
+        ids = [1]
         for token in doc:
             if token.is_punct:
-                pass # ignore punctuation
+                continue # ignore punctuation
 
-            elif nlp.vocab.has_vector(token.norm):
+            if nlp.vocab.has_vector(token.norm):
                 id = nlp.vocab.vectors.key2row[token.norm] # encode tokens using index in vector matrix
 
                 # keep track of number of token occurrences
-                if id in vocab:
-                    vocab[id].inc()
+                if id in spacy_2_emb:
+                    vocab[spacy_2_emb[id]].inc()
                 else:
-                    vocab[id] = Token(token.text)
+                    spacy_2_emb[id] = len(vocab)
+                    vocab[spacy_2_emb[id]] = Token(token.text)
+                    
+                id = spacy_2_emb[id]
             else:
-                id = 20002 # <UNK> token
+                id = 3
 
             ids.append(id)
-
-        ids.append(20001) # <END> token
+        ids.append(2)
+        
         dataset['annotations'][i]['target'] = ids
 
-    # finalize vocab
-    vocab = {k:v.text for k, v in vocab.items() if v.count > 3}
+    # distill vocab
+    vocab = {k:v.text for k, v in vocab.items() if v.count >= MIN_COUNT}
 
     # replace rare tokens with <UNK> and pad with <NULL>
-    cap_length = 17
     for i in range(num_anns):
         tokens = dataset['annotations'][i]['target']
-        if len(tokens) <= cap_length:
-            tokens = [tok if tok in vocab else 20002 for tok in enc_cap]
-            tokens += [20003] * (cap_length - len(enc_cap))
+        if len(tokens) <= CAP_LENGTH:
+            tokens = [tok if tok in vocab else 3 for tok in tokens]
+            tokens += [0] * (CAP_LENGTH - len(tokens))
             dataset['annotations'][i]['target'] = tokens
         else:
             dataset['annotations'][i]['target'] = None # ignore long captions
