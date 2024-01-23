@@ -41,7 +41,7 @@ def main():
     num_anns = len(dataset['annotations'])
 
     nlp = spacy.load('en_core_web_md')
-
+    
     vocab = {0:Token('<NULL>', MIN_COUNT), 1:Token('<START>', MIN_COUNT), 2:Token('<END>', MIN_COUNT), 3:Token('<UNK>', MIN_COUNT)}
     spacy_2_emb = {} # maps spacy embedding row # to torch embedding row #
     for i in range(num_anns):
@@ -73,13 +73,15 @@ def main():
         dataset['annotations'][i]['target'] = ids
 
     # distill vocab
-    vocab = {k:v.text for k, v in vocab.items() if v.count >= MIN_COUNT}
+    old_vocab = {k:v.text for k, v in vocab.items() if v.count >= MIN_COUNT}
+    vocab = {e:v for e, v in enumerate(old_vocab.values())}
+    old2new = {old:new for old, new in zip(old_vocab.keys(), vocab.keys())}
 
     # replace rare tokens with <UNK> and pad with <NULL>
     for i in range(num_anns):
         tokens = dataset['annotations'][i]['target']
         if len(tokens) <= CAP_LENGTH:
-            tokens = [tok if tok in vocab else 3 for tok in tokens]
+            tokens = [old2new[tok] if tok in old_vocab else 3 for tok in tokens]
             tokens += [0] * (CAP_LENGTH - len(tokens))
             dataset['annotations'][i]['target'] = tokens
         else:
