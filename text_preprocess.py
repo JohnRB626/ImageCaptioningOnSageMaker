@@ -84,10 +84,10 @@ def create_vocab(split:str):
         vocab = {e:v for e, v in enumerate(spacy_vocab.values(), 4)} # start at 4 to leave room for <META> tokens
         spacy2model = {old:new for old, new in zip(spacy_vocab.keys(), vocab.keys())}
         
-        vocab['0'] = '<NULL>'
-        vocab['1'] = '<START>'
-        vocab['2'] = '<END>'
-        vocab['3'] = '<UNK>'
+        vocab[0] = '<NULL>'
+        vocab[1] = '<START>'
+        vocab[2] = '<END>'
+        vocab[3] = '<UNK>'
         
         bucket.put_object(
             Body=json.dumps(vocab).encode('utf-8'),
@@ -117,9 +117,9 @@ def retokenize(split:str):
     for i in range(num_anns):
         tokens = dataset['annotations'][i]['target']
         if len(tokens) <= CAP_LENGTH:
-            tokens = [index_map[str(tok)] if str(tok) in index_map else '3' for tok in tokens]
-            tokens = ['1'] + tokens + ['2']
-            tokens += ['0'] * (CAP_LENGTH + 2 - len(tokens)) # add 2 for <START> and <END> tokens
+            tokens = [index_map[str(tok)] if str(tok) in index_map else 3 for tok in tokens]
+            tokens = [1] + tokens + [2]
+            tokens += [0] * (CAP_LENGTH + 2 - len(tokens)) # add 2 for <START> and <END> tokens
             dataset['annotations'][i]['target'] = tokens
         else:
             dataset['annotations'][i]['target'] = None # ignore long captions
