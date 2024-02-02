@@ -103,7 +103,7 @@ def retokenize(split:str):
     """
     Retokenizes captions via a vocab reindexed with consecutive integers beginning at 0.
     
-    Additionally, adds <START>, <END>, <UNK>, and <NULL> tokens
+    Additionally, adds <START>, <END>, <UNK>, and <NULL> tokens. Vocab must exist prior
     """
     
     bucket = sagemaker.Session().default_bucket()

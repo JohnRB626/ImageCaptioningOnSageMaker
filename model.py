@@ -33,12 +33,13 @@ class CaptioningModel(nn.Module):
         
         
     def forward(self, imgs: Tensor, targets: Tensor) -> Tensor:
+        device = targets.get_device()
         
         memory = self.encoder(imgs).unsqueeze(1)
         
         _, T = targets.shape
         pad_mask = targets == 0
-        attn_mask = ~torch.tril(torch.ones(T, T, dtype=torch.bool))
+        attn_mask = ~torch.tril(torch.ones(T, T, dtype=torch.bool, device=device))
         
         targets = self.embedding(targets)
         targets = self.pos_enc(targets)

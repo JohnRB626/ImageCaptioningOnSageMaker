@@ -1,3 +1,4 @@
+import os
 import random
 import json
 import boto3
@@ -14,16 +15,15 @@ class CocoDataset(Dataset):
     
     def __init__(
         self,
-        split_prefix: str,
+        image_path: str,
+        text_path: str,
+        split: str,
         image_transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None
     ) -> None:
         
-        bucket = sagemaker.Session().default_bucket()
-        bucket = boto3.resource('s3').Bucket(bucket)
-        
-        path = f'annotations/targets_{split_prefix}.json'
-        dataset = json.load(bucket.Object(path).get()['Body'])
+        ann_path = f'targets_{split}.json'
+        dataset = json.load(open(os.path.join(text_path, ann_path), 'r', encoding='utf-8'))
         
         anns = {}
         imgToAnns = defaultdict(list)
@@ -37,16 +37,15 @@ class CocoDataset(Dataset):
         self.imgs = {img['id']:img for img in dataset['images']}
         self.ids = list(sorted(self.imgs.keys()))
         
+        self.image_path = image_path
+        
         self.image_transform = image_transform
         self.target_transform = target_transform
-        self.split_prefix = split_prefix
-        self.bucket = bucket
-        
-        
+        self.split = split
+
     def _load_image(self, id:int) -> Image.Image:
-        path = "{}/{}".format(self.split_prefix, self.imgs[id]['file_name'])
-        image_object = self.bucket.Object(path)
-        return Image.open(image_object.get()['Body'])
+        path = os.path.join(self.image_path, self.imgs[id]['file_name'])
+        return Image.open(path).convert('RGB')
     
     def _load_target(self, id:int) -> List[str]:
         targets = []
