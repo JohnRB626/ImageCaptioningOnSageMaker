@@ -8,8 +8,9 @@ import sagemaker
 from collections import defaultdict
 from typing import List, Tuple, Any, Optional, Callable
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torchvision.transforms import ToTensor
+from torchvision.models import ResNet50_Weights
 
 class CocoDataset(Dataset):
     
@@ -74,9 +75,73 @@ class CocoDataset(Dataset):
     def __len__(self) -> int:
         return len(self.ids)
     
+    
+class LocalDataset(CocoDataset):
+    
+    def __init__(
+        self,
+        split: str,
+        image_transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None
+    ) -> None:
+        bucket = sagemaker.Session().default_bucket()
+        bucket = boto3.resource('s3').Bucket(bucket)
+
+        ann_path = f'annotations/targets_{split}.json'
+        dataset = json.load(bucket.Object(ann_path).get()['Body'])
+
+        anns = {}
+        imgToAnns = defaultdict(list)
+        for ann in dataset['annotations']:
+            imgToAnns[ann['image_id']].append(ann['id'])
+            anns[ann['id']] = ann
+
+        self.anns = anns
+        self.imgToAnns = imgToAnns
+
+        self.imgs = {img['id']:img for img in dataset['images']}
+        self.ids = list(sorted(self.imgs.keys()))
+
+        self.image_transform = image_transform
+        self.target_transform = target_transform
+        self.split = split
+        self.bucket = bucket
+        
+    def _load_image(self, id:int) -> Image.Image:
+        path = "{}/{}".format(self.split, self.imgs[id]['file_name'])
+        image_object = self.bucket.Object(path)
+        return Image.open(image_object.get()['Body']).convert('RGB')
+    
+    
 def collate_fn(batch):
     images, captions = zip(*batch)
     images, captions = torch.stack(images, 0), torch.tensor(captions)
     return (images, captions)
     
-        
+def get_data_loader(
+    image_path: str,
+    text_path: str,
+    split: str,
+    batch_size: int,
+    length: int = None
+):
+    dataset = CocoDataset(
+        image_path,
+        text_path,
+        split,
+        image_transform=ResNet50_Weights.DEFAULT.transforms()
+    )
+
+    length = length if length else len(dataset)
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=RandomSampler(
+            dataset,
+            num_samples=length
+        ),
+        collate_fn=collate_fn
+    )
+
+    return loader
