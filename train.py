@@ -10,10 +10,8 @@ import torch
 import matplotlib.pyplot as plt
 
 from model import CaptioningModel
-from data import CocoDataset, collate_fn
-from nltk.translate.bleu_score import sentence_bleu
-from torch.utils.data import DataLoader, RandomSampler
-from torchvision.models import ResNet50_Weights
+from data import get_data_loader
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 from sagemaker.session import Session
 from sagemaker.experiments.run import load_run
@@ -29,51 +27,30 @@ def train(args):
     
     device = torch.device("cuda")
     
-    train_data = CocoDataset(
-        args.train,
-        args.text,
-        'train2017',
-        image_transform=ResNet50_Weights.DEFAULT.transforms()
-    )
-    
-    train_loader = DataLoader(
-        train_data,
-        batch_size=args.batch_size,
-        shuffle=True,
-        collate_fn=collate_fn
-    )
-    
-    val_loader = DataLoader(
-        CocoDataset(
-            args.test,
-            args.text,
-            'val2017',
-            image_transform=ResNet50_Weights.DEFAULT.transforms()
-        ),
-        batch_size=args.batch_size,
-        shuffle=True,
-        collate_fn=collate_fn
-    )
-    
-    train_val_loader = DataLoader(
-        train_data,
-        batch_size=args.batch_size,
-        sampler=RandomSampler(
-            train_data,
-            num_samples=len(val_loader.sampler)
-        ),
-        collate_fn=collate_fn
-    )
+    train_loader = get_data_loader(args.train, args.text, 'train2017', args.batch_size)
+    val_loader = get_data_loader(args.test, args.text, 'val2017', args.batch_size)
+    train_val_loader = get_data_loader(args.train, args.text, 'train2017', args.batch_size, length=len(val_loader.sampler))
     
     model = CaptioningModel(vocab_size=len(vocab),
                         d_model=512,
                         nheads=args.heads,
-                        nlayers=args.nlayers).to(device)
+                        nlayers=args.nlayers)
+
     
+    if args.checkpoint:
+        checkpoint = torch.load(args.checkpoint)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+    model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    
+    if args.checkpoint:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
     
     session = Session(boto3.session.Session(region_name=args.region))
     with load_run(sagemaker_session=session) as run:
+    
         run.log_parameters(
             {
                 "batch_size": args.batch_size,
@@ -82,12 +59,13 @@ def train(args):
                 "nlayers": args.nlayers
             }
         )
+    
         
         for epoch in range(1, args.epochs + 1):
             model.train()
             for i, (source, target) in enumerate(train_loader):
                 source, target = source.to(device), target.to(device)
-                
+
                 target_in = target[:, :-1]
                 target_out = target[:, 1:]
                 mask = target_out != 0
@@ -101,7 +79,7 @@ def train(args):
 
                 loss.backward()
                 optimizer.step()
-                
+
                 run.log_metric(name='train loss', value=loss.item(), step=i)
 
                 if i % args.log_interval == 0:
@@ -114,22 +92,30 @@ def train(args):
                             loss.item(),
                         )
                     )
-            
+
             validate(model, val_loader, vocab, run, 'test', epoch, args.log_interval)
             validate(model, train_val_loader, vocab, run, 'train', epoch, args.log_interval)
-        
+
+        model_path = os.path.join(args.model, 'checkpoint.pt')
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict()
+        }, model_path)
+        run.log_artifact(name='checkpoint', value=model_path)
+
 
 def validate(model, data_loader, vocab, run, split, epoch, log_interval):
     logger.info("validating...")
     model.eval()
     device = torch.device("cuda")
     
+    smoothing = SmoothingFunction()
     meta_tokens = [0, 1, 2]
     
     total_score = 0
     batches = 0
     with torch.no_grad():
-        for batch_idx, (source, target) in enumerate(data_loader, 1):
+        for batch_idx, (source, target) in enumerate(data_loader):
             source, target = source.to(device), target.to(device)
             target = target[:, 1:]
 
@@ -153,11 +139,11 @@ def validate(model, data_loader, vocab, run, split, epoch, log_interval):
             for i in range(batch_size):
                 reference = [vocab[str(token)] for token in target[i, :].tolist() if token not in meta_tokens]
                 hypothesis = [vocab[str(token)] for token in captions[i, :].tolist() if token not in meta_tokens]
-                bleu_score = sentence_bleu([reference], hypothesis)
+                bleu_score = round(sentence_bleu([reference], hypothesis, smoothing_function=smoothing.method3), ndigits=4)
                 
                 if i in idxs and batch_idx % log_interval == 0:
-                    image = source[i, ...].permute(1, 2, 0)
-                    axs[subplot_idx] = plt.imshow(image)
+                    image = source[i, ...].cpu().permute(1, 2, 0)
+                    axs[subplot_idx].imshow(image)
                     
                     axs[subplot_idx].text(0.5, 1.05, ' '.join(reference), fontsize=8, ha='center', transform=axs[subplot_idx].transAxes)
                     axs[subplot_idx].text(0.5, -.05, f'{bleu_score}: ' + ' '.join(hypothesis), fontsize=8, ha='center', transform=axs[subplot_idx].transAxes)
@@ -226,7 +212,7 @@ if __name__ == "__main__":
         help="input batch size for training"
     )
     parser.add_argument(
-        "--lr", type=float, default=0.01, metavar="LR", help="learning rate"
+        "--lr", type=float, default=0.0001, metavar="LR", help="learning rate"
     )
     
     parser.add_argument(
@@ -241,6 +227,14 @@ if __name__ == "__main__":
         type=int,
         default=100,
         metavar="N"
+    )
+    
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="path to model checkpoint"
     )
 
     parser.add_argument("--region", type=str, default="us-east-1")
