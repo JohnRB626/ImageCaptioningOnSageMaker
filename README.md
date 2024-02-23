@@ -10,8 +10,8 @@ Downloading and preprocessing of data, training, and inference is all done via S
 - Notebook, inference, and preprocessing were run on the same ml.t3.medium instance using SageMaker's PyTorch 2.0.0 Python 3.10 CPU optimized image.
 
 ## Requirements
-- Preprocessing requires the spacy python module and embeddings. Installed via a lifecycle configuration [script](https://github.com/JohnRB626/ImageCaptioningOnSageMaker/blob/main/on-kernel-start.sh).
-- Training requires nltk module for bleu score calculation. This is provided to estimator by `requirements.txt`.
+- Preprocessing requires the [spacy](https://spacy.io/) python module and embeddings. Installed via a lifecycle configuration [script](https://github.com/JohnRB626/ImageCaptioningOnSageMaker/blob/main/on-kernel-start.sh).
+- Training requires [nltk](https://www.nltk.org/api/nltk.translate.bleu_score.html) module for bleu score calculation. This is provided to estimator by `requirements.txt`.
 
 ## Instructions
 1. Clone repository into SageMaker Studio
