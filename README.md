@@ -19,6 +19,9 @@ Downloading and preprocessing of data, training, and inference is all done via S
 3. Run `python text_preprocess.py all train2017` followed by `python text_preprocess.py all val2017`
 4. Run cells in `ImageCaption.ipynb`
 
+## Acknowledgements
+This project is inspired by and built with reference to [Stanford CS231n](https://github.com/cs231n/cs231n.github.io) Assignment 3 as well as AWS SageMaker [Examples](https://github.com/aws/amazon-sagemaker-examples) and [Documentation](https://docs.aws.amazon.com/sagemaker/latest/dg/train-model.html)
+
 ## Results
 ![Figure: 1](https://github.com/JohnRB626/ImageCaptioningOnSageMaker/blob/main/results/figure01.png)
 ![Figure: 2](https://github.com/JohnRB626/ImageCaptioningOnSageMaker/blob/main/results/figure02.png)
